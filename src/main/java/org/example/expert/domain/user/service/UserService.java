@@ -15,33 +15,45 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class UserService {
 
+    private static final int MIN_PASSWORD_LENGTH = 8;
+    private static final String DIGIT_PATTERN = ".*\\d.*";
+    private static final String UPPERCASE_PATTERN = ".*[A-Z].*";
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
     public UserResponse getUser(long userId) {
-        User user = userRepository.findById(userId).orElseThrow(() -> new InvalidRequestException("User not found"));
-        return new UserResponse(user.getId(), user.getEmail());
+        return userRepository.findById(userId)
+                .map(user -> new UserResponse(user.getId(), user.getEmail()))
+                .orElseThrow(() -> new InvalidRequestException("User not found"));
     }
 
     @Transactional
-    public void changePassword(long userId, UserChangePasswordRequest userChangePasswordRequest) {
-        if (userChangePasswordRequest.getNewPassword().length() < 8 ||
-                !userChangePasswordRequest.getNewPassword().matches(".*\\d.*") ||
-                !userChangePasswordRequest.getNewPassword().matches(".*[A-Z].*")) {
-            throw new InvalidRequestException("새 비밀번호는 8자 이상이어야 하고, 숫자와 대문자를 포함해야 합니다.");
-        }
-
+    public void changePassword(long userId, UserChangePasswordRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new InvalidRequestException("User not found"));
 
-        if (passwordEncoder.matches(userChangePasswordRequest.getNewPassword(), user.getPassword())) {
-            throw new InvalidRequestException("새 비밀번호는 기존 비밀번호와 같을 수 없습니다.");
-        }
+        validateNewPassword(request.getNewPassword());
+        validatePasswordChange(user, request.getOldPassword(), request.getNewPassword());
 
-        if (!passwordEncoder.matches(userChangePasswordRequest.getOldPassword(), user.getPassword())) {
+        user.changePassword(passwordEncoder.encode(request.getNewPassword()));
+    }
+
+    private void validateNewPassword(String newPassword) {
+        if (newPassword.length() < MIN_PASSWORD_LENGTH ||
+                !newPassword.matches(DIGIT_PATTERN) ||
+                !newPassword.matches(UPPERCASE_PATTERN)) {
+            throw new InvalidRequestException("새 비밀번호는 8자 이상이어야 하고, 숫자와 대문자를 포함해야 합니다.");
+        }
+    }
+
+    private void validatePasswordChange(User user, String oldPassword, String newPassword) {
+        if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
             throw new InvalidRequestException("잘못된 비밀번호입니다.");
         }
 
-        user.changePassword(passwordEncoder.encode(userChangePasswordRequest.getNewPassword()));
+        if (passwordEncoder.matches(newPassword, user.getPassword())) {
+            throw new InvalidRequestException("새 비밀번호는 기존 비밀번호와 같을 수 없습니다.");
+        }
     }
 }

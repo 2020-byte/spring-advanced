@@ -26,14 +26,15 @@ public class AuthService {
 
     @Transactional
     public SignupResponse signup(SignupRequest signupRequest) {
-
-        String encodedPassword = passwordEncoder.encode(signupRequest.getPassword());
-
-        UserRole userRole = UserRole.of(signupRequest.getUserRole());
-
+        // Early return으로 이메일 중복 체크를 먼저 수행
         if (userRepository.existsByEmail(signupRequest.getEmail())) {
             throw new InvalidRequestException("이미 존재하는 이메일입니다.");
         }
+
+        // 중복 체크 통과 후 비밀번호 인코딩 수행
+        String encodedPassword = passwordEncoder.encode(signupRequest.getPassword());
+
+        UserRole userRole = UserRole.of(signupRequest.getUserRole());
 
         User newUser = new User(
                 signupRequest.getEmail(),
@@ -51,13 +52,12 @@ public class AuthService {
         User user = userRepository.findByEmail(signinRequest.getEmail()).orElseThrow(
                 () -> new InvalidRequestException("가입되지 않은 유저입니다."));
 
-        // 로그인 시 이메일과 비밀번호가 일치하지 않을 경우 401을 반환합니다.
-        if (!passwordEncoder.matches(signinRequest.getPassword(), user.getPassword())) {
-            throw new AuthException("잘못된 비밀번호입니다.");
+        // 부정문 조건을 긍정문으로 변경하고 early return 적용
+        if (passwordEncoder.matches(signinRequest.getPassword(), user.getPassword())) {
+            String bearerToken = jwtUtil.createToken(user.getId(), user.getEmail(), user.getUserRole());
+            return new SigninResponse(bearerToken);
         }
 
-        String bearerToken = jwtUtil.createToken(user.getId(), user.getEmail(), user.getUserRole());
-
-        return new SigninResponse(bearerToken);
+        throw new AuthException("잘못된 비밀번호입니다.");
     }
 }
